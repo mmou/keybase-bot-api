@@ -127,7 +127,7 @@ mod tests {
     fn start_bot() {
         let bot = Bot::new(
             "pkt0",
-            option_env!("PAPERKEY").expect("Missing PAPERKEY env"),
+            option_env!("KEYBASE_PAPERKEY").expect("Missing KEYBASE_PAPERKEY env"),
         )
         .unwrap();
         println!("Bot is {:?}", bot);
