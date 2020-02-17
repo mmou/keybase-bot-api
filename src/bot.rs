@@ -1,5 +1,6 @@
 use super::ApiError;
 use crate::keybase_cmd;
+use async_std::task::JoinHandle;
 use hex;
 use rand::prelude::*;
 use std::{
@@ -7,7 +8,6 @@ use std::{
     io::{self, Read},
     path::{Path, PathBuf},
     process::{self, Command, Stdio},
-    thread::JoinHandle,
 };
 
 pub struct Bot {

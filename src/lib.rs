@@ -1,31 +1,21 @@
-#![feature(impl_trait_in_bindings)]
-
 pub mod bot;
 pub mod chat;
 pub mod status;
-use async_std::prelude::*;
-use async_std::sync::{channel, Receiver};
-use async_std::task;
 pub use bot::Bot;
 pub use chat::Chat;
-//use futures::channel::mpsc;
 use serde::{Deserialize, Serialize};
 pub use status::Status;
-use std::error::Error;
 use std::{fmt, io};
 
 pub(crate) mod keybase_cmd {
     use super::{ApiError, KBError};
-    use async_std::prelude::*;
     use async_std::sync::{channel, Receiver};
-    //use futures::channel::mpsc;
-    use async_std::prelude::*;
+    use async_std::task::{JoinHandle, spawn};
     use serde::{de::DeserializeOwned, Deserialize, Serialize};
     use serde_json;
     use std::io::{self, BufRead, BufReader, Write};
     use std::path::{Path, PathBuf};
     use std::process::{Child, Command, Stdio};
-    use std::thread;
 
     thread_local! {
         pub static KEYBASE: PathBuf = which_keybase();
@@ -155,62 +145,40 @@ pub(crate) mod keybase_cmd {
     pub fn listen_chat_api<T>(
         keybase_path: &Path,
         home_dir: &Path,
-    ) -> Result<(Receiver<T>, ()), ApiError>
-    //thread::JoinHandle<Result<(), ApiError>>), ApiError>
+    ) -> Result<(Receiver<Result<T, ApiError>>, JoinHandle<()>), ApiError>
     where
         T: DeserializeOwned + Send + 'static,
     {
         let mut child = keybase_exec(keybase_path, home_dir, &["chat", "api-listen"])?;
 
         if let Some(stdout) = child.stdout.take() {
-            let (mut sender, receiver) = channel::<T>(128);
-            async_std::task::spawn( async move {
-                  let mut reader = BufReader::new(stdout);
-                 for line in reader.lines() {
-                     //let mut le = String::new();
-                     //let _bytes_written = reader.read_line(&mut line).unwrap();
-                     let res: T = serde_json::from_str(&line.unwrap()).unwrap();
-                     let x: () = sender.send(res).await;
+            let (sender, receiver) = channel::<Result<T, ApiError>>(128);
+            let handler : JoinHandle<()> = spawn( async move {
+                let reader = BufReader::new(stdout);
+                for line in reader.lines() {
+                    let res: Result<T, ApiError> = line
+                        .map_or_else(
+                            |e| Err(ApiError::from(e)),
+                            |l| serde_json::from_str(&l)
+                                .or_else(|e| Err(ApiError::from(e)))
+                         );
+                     sender.send(res).await;
                  }
-                 drop(sender);});
-                       Ok((receiver, ()))
+                drop(sender);
+            });
+            Ok((receiver, handler))
         } else {
             Err(io::Error::new(io::ErrorKind::BrokenPipe, "Couldn't get stdout").into())
         }
     }
 }
- 
-            /*let handler: thread::JoinHandle<Result<(), ApiError>> = thread::spawn(async move {
-                 let mut reader = BufReader::new(stdout);
 
-                 for line in reader.lines() {
-                     let mut line = String::new();
-                     let _bytes_written = reader.read_line(&mut line)?;
-                     let res: T = serde_json::from_str(&line)?;
-                     let x: () = sender.send(res).await;
-                 }
-                 drop(sender);
-                 Ok(())
-            });*/
-
-
-/*
- /*
-                                  .filter_map(|line| line.ok())
-                                          .filter(|line| line.find("usb").is_some())
-                                                  .for_each(|line| println!("{}", line));
-                                                  */
-                              Ok
-
-*
-* */
 #[derive(Debug)]
 pub enum ApiError {
     Parsing(serde_json::error::Error),
     IOErr(io::Error),
     KBErr(KBError),
     UTF8Err(std::string::FromUtf8Error),
-    //ChannelErr(mpsc::SendError),
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -224,15 +192,6 @@ impl fmt::Display for ApiError {
         write!(f, "{:?}", self)
     }
 }
-
-/*
-impl Error for ApiError {}
-
-impl From<mpsc::SendError> for ApiError {
-    fn from(error: mpsc::SendError) -> Self {
-        ApiError::ChannelErr(error)
-    }
-}*/
 
 impl From<std::string::FromUtf8Error> for ApiError {
     fn from(error: std::string::FromUtf8Error) -> Self {

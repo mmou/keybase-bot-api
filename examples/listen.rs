@@ -1,5 +1,4 @@
 use async_std::prelude::*;
-use async_std::sync::*;
 use keybase_bot_api::{Bot, Chat};
 
 fn main() {
@@ -14,6 +13,10 @@ fn main() {
         let n = notifs.next().await;
         if let Some(notif) = n {
             println!("Got notif: {:?}", notif);
+        }
+        else {
+            println!("Channel sender dropped");
+            return
         }
     } })
 }
